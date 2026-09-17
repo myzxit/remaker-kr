@@ -15,6 +15,8 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".mp3": "audio/mpeg",
   ".m4a": "audio/mp4",
+  ".wav": "audio/wav",
+  ".json": "application/json",
 };
 
 /**

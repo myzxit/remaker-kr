@@ -33,7 +33,113 @@ type Project = {
 type ScriptLine = { index: number; text: string; srcStart: number; srcEnd: number };
 type Script = { lines: ScriptLine[]; estimatedSec: number; mode: string } | null;
 
+type Finding = {
+  severity: "high" | "medium" | "low";
+  category: string;
+  message: string;
+  quote?: string;
+  atSec?: number;
+};
+
+type PolicyReport = {
+  score: number;
+  summary: string;
+  findings: Finding[];
+  stats: {
+    durationSec: number;
+    speechSec: number;
+    speechRatio: number;
+    charCount: number;
+    charsPerSec: number;
+    meanVolumeDb: number | null;
+    maxVolumeDb: number | null;
+  };
+};
+
 const ACTIVE = ["queued", "fetching", "transcribing", "scripting", "voicing", "rendering"];
+
+const SEVERITY: Record<Finding["severity"], { label: string; color: string; bg: string }> = {
+  high: { label: "먼저 볼 것", color: "#B42318", bg: "rgba(217,45,32,0.10)" },
+  medium: { label: "확인", color: "#B54708", bg: "rgba(247,144,9,0.12)" },
+  low: { label: "참고", color: "#175CD3", bg: "rgba(41,112,255,0.10)" },
+};
+
+/** 정책 점검 결과. 판정이 아니라 "한 번 더 볼 지점" 목록이다. */
+function PolicyCard({ report, filePath }: { report: PolicyReport; filePath: string | null }) {
+  const { stats } = report;
+
+  return (
+    <div className="card mt-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-lg font-bold">점검 결과</h2>
+        <div className="text-3xl font-bold tabular-nums" style={{ color: "var(--color-brand)" }}>
+          {report.score}
+          <span className="muted ml-1 text-sm font-medium">/ 100</span>
+        </div>
+      </div>
+      <p className="muted mt-2 text-sm">{report.summary}</p>
+
+      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-4">
+        {[
+          { label: "길이", value: formatDuration(stats.durationSec) },
+          { label: "말한 비율", value: `${Math.round(stats.speechRatio * 100)}%` },
+          { label: "말 속도", value: `초당 ${stats.charsPerSec}자` },
+          {
+            label: "음량",
+            value:
+              stats.meanVolumeDb === null
+                ? "측정 못 함"
+                : `평균 ${stats.meanVolumeDb.toFixed(1)}dB`,
+          },
+        ].map((s) => (
+          <div key={s.label} className="rounded-xl px-4 py-3" style={{ background: "var(--surface)" }}>
+            <div className="muted text-xs">{s.label}</div>
+            <div className="mt-1 font-semibold">{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {report.findings.length > 0 ? (
+        <ul className="mt-6 space-y-3">
+          {report.findings.map((f, i) => {
+            const tone = SEVERITY[f.severity];
+            return (
+              <li key={i} className="rounded-xl p-4" style={{ background: tone.bg }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className="rounded-md px-2 py-0.5 text-xs font-bold"
+                    style={{ color: tone.color, background: "var(--canvas)" }}
+                  >
+                    {tone.label}
+                  </span>
+                  <span className="text-sm font-semibold">{f.category}</span>
+                  {typeof f.atSec === "number" && (
+                    <span className="muted text-xs tabular-nums">{formatDuration(f.atSec)} 지점</span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm leading-relaxed">{f.message}</p>
+                {f.quote && <p className="muted mt-2 text-xs">“{f.quote}”</p>}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="muted mt-6 text-sm">규칙에 걸린 지점이 없습니다.</p>
+      )}
+
+      <p className="muted mt-6 text-xs leading-relaxed">
+        플랫폼의 실제 심사 기준은 공개되어 있지 않고 수시로 바뀝니다. 여기서 걸리지 않았다고
+        안전한 것도, 걸렸다고 반드시 문제가 되는 것도 아닙니다. 참고용으로만 보세요.
+      </p>
+
+      {filePath && (
+        <a href={`/api/media/${filePath}`} download="policy.json" className="btn-ghost mt-4 text-sm">
+          결과 내려받기 (JSON)
+        </a>
+      )}
+    </div>
+  );
+}
 
 export default function ProjectView({
   initial,
@@ -124,10 +230,17 @@ export default function ProjectView({
         </div>
       )}
 
+      {/* 정책 점검 결과 */}
+      {project.outputs
+        .filter((out) => out.kind === "report" && out.meta)
+        .map((out) => (
+          <PolicyCard key={out.id} report={JSON.parse(out.meta as string) as PolicyReport} filePath={out.filePath} />
+        ))}
+
       {/* 결과물 */}
-      {project.outputs.length > 0 && (
+      {project.outputs.filter((o) => o.kind !== "report").length > 0 && (
         <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {project.outputs.map((out) => {
+          {project.outputs.filter((o) => o.kind !== "report").map((out) => {
             const meta = out.meta ? (JSON.parse(out.meta) as Record<string, unknown>) : {};
             return (
               <div key={out.id} className="overflow-hidden rounded-2xl" style={{ border: "1px solid var(--line)" }}>
@@ -159,7 +272,7 @@ export default function ProjectView({
                   {out.filePath && (
                     <a
                       href={`/api/media/${out.filePath}`}
-                      download={`${out.title || "output"}.mp4`}
+                      download={`${out.title || "output"}.${out.kind === "image" ? "png" : "mp4"}`}
                       className="btn-primary mt-4 w-full py-2 text-xs"
                     >
                       내려받기

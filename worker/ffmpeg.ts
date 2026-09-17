@@ -66,6 +66,31 @@ export async function probeDuration(file: string): Promise<number> {
   return value;
 }
 
+/**
+ * 음량 측정 (평균 / 최대, dB).
+ *
+ * `volumedetect` 는 통계를 stderr 로 뱉는다. 소리 트랙이 없으면 숫자가 없으므로
+ * null 을 돌려 주고, 부르는 쪽에서 "측정 못 함"으로 다룬다.
+ */
+export async function probeVolume(
+  file: string
+): Promise<{ meanDb: number | null; maxDb: number | null }> {
+  const { stderr } = await run(FFMPEG, [
+    "-i", file,
+    "-vn",
+    "-af", "volumedetect",
+    "-f", "null",
+    "-",
+  ]);
+
+  const pick = (key: string) => {
+    const m = new RegExp(`${key}:\\s*(-?\\d+(?:\\.\\d+)?) dB`).exec(stderr);
+    return m ? Number(m[1]) : null;
+  };
+
+  return { meanDb: pick("mean_volume"), maxDb: pick("max_volume") };
+}
+
 /** 음성 인식용 16kHz 모노 wav 추출 */
 export async function extractAudio(input: string, output: string): Promise<void> {
   await run(FFMPEG, [

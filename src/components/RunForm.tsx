@@ -38,6 +38,22 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
   const [scriptMode, setScriptMode] = useState<"condense" | "faithful">("condense");
   const [showOptions, setShowOptions] = useState(!compact);
 
+  // 숏폼 옵션
+  const [shortsCount, setShortsCount] = useState(0);
+  const [minSec, setMinSec] = useState(20);
+  const [maxSec, setMaxSec] = useState(60);
+  const [removeSilence, setRemoveSilence] = useState(true);
+
+  // 무음 제거 옵션
+  const [thresholdSec, setThresholdSec] = useState(0.6);
+  const [padSec, setPadSec] = useState(0.12);
+
+  // 댓글 이미지 옵션
+  const [nickname, setNickname] = useState("");
+  const [commentBody, setCommentBody] = useState("");
+  const [likes, setLikes] = useState(1200);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +63,11 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
   const voices = useMemo(() => voicesFor(language), [language]);
   const isRemake = tool === "remake";
   const isDub = tool === "dub";
+  const isShorts = tool === "shorts";
+  const isSilence = tool === "silence";
+  const isComment = tool === "comment";
+  /** 댓글 이미지만 원본 영상이 필요 없다. */
+  const needsSource = !isComment;
 
   // 내가 파일에서 떠낸 목소리도 고를 수 있게 불러 온다.
   useEffect(() => {
@@ -89,13 +110,20 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
       router.push(`/login?mode=signup&next=/tools/${tool}`);
       return;
     }
-    if (mode === "link" && !url.trim()) return setError("영상 주소를 입력해 주세요.");
-    if (mode === "upload" && !file) return setError("영상 파일을 선택해 주세요.");
+    if (needsSource) {
+      if (mode === "link" && !url.trim()) return setError("영상 주소를 입력해 주세요.");
+      if (mode === "upload" && !file) return setError("영상 파일을 선택해 주세요.");
+    }
+    if (isComment) {
+      if (!nickname.trim()) return setError("닉네임을 입력해 주세요.");
+      if (!commentBody.trim()) return setError("댓글 내용을 입력해 주세요.");
+    }
+    if (isShorts && maxSec <= minSec) return setError("최대 길이는 최소 길이보다 길어야 합니다.");
 
     setBusy(true);
     try {
       let path: string | undefined;
-      if (mode === "upload" && file) path = await upload(file);
+      if (needsSource && mode === "upload" && file) path = await upload(file);
 
       const options: Record<string, unknown> = isRemake
         ? {
@@ -112,17 +140,23 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
           }
         : isDub
           ? { language, voice, rate, burnSubtitles, subtitleStyle }
-          : {};
+          : isShorts
+            ? { count: shortsCount, minSec, maxSec, aspect, subtitleStyle, removeSilence }
+            : isSilence
+              ? { thresholdSec, padSec, burnSubtitles, subtitleStyle }
+              : isComment
+                ? { nickname: nickname.trim(), body: commentBody.trim(), likes, theme }
+                : {};
 
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: tool,
-          sourceType: mode,
-          url: mode === "link" ? url.trim() : undefined,
+          sourceType: needsSource ? mode : undefined,
+          url: needsSource && mode === "link" ? url.trim() : undefined,
           path,
-          title: file?.name,
+          title: isComment ? `${nickname.trim()} 댓글` : file?.name,
           options,
         }),
       });
@@ -139,60 +173,254 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
 
   return (
     <form onSubmit={submit} className="card">
-      <div
-        className="mb-4 inline-flex rounded-xl p-1"
-        style={{ border: "1px solid var(--line)" }}
-      >
-        {(
-          [
-            ["link", "링크"],
-            ["upload", "파일"],
-          ] as const
-        ).map(([value, text]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setMode(value)}
-            className="rounded-lg px-4 py-2 text-sm font-semibold transition"
-            style={
-              mode === value
-                ? { background: "var(--color-brand)", color: "#fff" }
-                : { color: "var(--ink-soft)" }
-            }
-          >
-            {text}
-          </button>
-        ))}
-      </div>
-
-      {mode === "link" ? (
-        <input
-          type="url"
-          className="input"
-          placeholder="유튜브 · 인스타그램 · 틱톡 주소"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-      ) : (
+      {needsSource && (
         <>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            className="muted w-full rounded-xl px-4 py-7 text-sm"
-            style={{ border: "1px dashed var(--line)" }}
+          <div
+            className="mb-4 inline-flex rounded-xl p-1"
+            style={{ border: "1px solid var(--line)" }}
           >
-            {file
-              ? `${file.name} (${(file.size / 1048576).toFixed(0)}MB)`
-              : "영상 파일 선택 (mp4 · mov · mkv…)"}
-          </button>
+            {(
+              [
+                ["link", "링크"],
+                ["upload", "파일"],
+              ] as const
+            ).map(([value, text]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className="rounded-lg px-4 py-2 text-sm font-semibold transition"
+                style={
+                  mode === value
+                    ? { background: "var(--color-brand)", color: "#fff" }
+                    : { color: "var(--ink-soft)" }
+                }
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+
+          {mode === "link" ? (
+            <input
+              type="url"
+              className="input"
+              placeholder="유튜브 · 인스타그램 · 틱톡 주소"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          ) : (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="muted w-full rounded-xl px-4 py-7 text-sm"
+                style={{ border: "1px dashed var(--line)" }}
+              >
+                {file
+                  ? `${file.name} (${(file.size / 1048576).toFixed(0)}MB)`
+                  : "영상 파일 선택 (mp4 · mov · mkv…)"}
+              </button>
+            </>
+          )}
         </>
+      )}
+
+      {isComment && (
+        <div className="grid gap-4">
+          <div>
+            <label className="label" htmlFor="nick">닉네임</label>
+            <input
+              id="nick"
+              className="input"
+              placeholder="예: 편집하는곰"
+              maxLength={40}
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="cbody">댓글 내용</label>
+            <textarea
+              id="cbody"
+              className="input min-h-28"
+              placeholder="영상에 얹을 댓글 문구를 적어 주세요."
+              maxLength={300}
+              value={commentBody}
+              onChange={(e) => setCommentBody(e.target.value)}
+            />
+            <p className="muted mt-1 text-xs">{commentBody.length}/300자</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="likes">좋아요 수</label>
+              <input
+                id="likes"
+                type="number"
+                className="input"
+                min={0}
+                max={999999}
+                value={likes}
+                onChange={(e) => setLikes(Math.max(0, Math.min(999999, Number(e.target.value) || 0)))}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="theme">색</label>
+              <select
+                id="theme"
+                className="select"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as "dark" | "light")}
+              >
+                <option value="dark">어두운 카드</option>
+                <option value="light">밝은 카드</option>
+              </select>
+            </div>
+          </div>
+          <p className="muted text-xs">
+            1080px 너비 PNG 카드로 만들어집니다. 편집 프로그램에서 영상 위에 얹어 쓰세요.
+          </p>
+        </div>
+      )}
+
+      {isShorts && (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="count">만들 개수</label>
+            <select
+              id="count"
+              className="select"
+              value={shortsCount}
+              onChange={(e) => setShortsCount(Number(e.target.value))}
+            >
+              <option value={0}>자동 (영상 길이에 맞춰)</option>
+              {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => (
+                <option key={n} value={n}>{n}개</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="saspect">화면 비율</label>
+            <select id="saspect" className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+              {ASPECTS.map((a) => (
+                <option key={a.id} value={a.id}>{a.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="minsec">최소 길이 {minSec}초</label>
+            <input
+              id="minsec"
+              type="range"
+              min={10}
+              max={90}
+              step={5}
+              value={minSec}
+              onChange={(e) => setMinSec(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "var(--color-brand)" }}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="maxsec">최대 길이 {maxSec}초</label>
+            <input
+              id="maxsec"
+              type="range"
+              min={15}
+              max={180}
+              step={5}
+              value={maxSec}
+              onChange={(e) => setMaxSec(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "var(--color-brand)" }}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="sstyle">자막 스타일</label>
+            <select id="sstyle" className="select" value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)}>
+              {SUBTITLE_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 self-center text-sm">
+            <input
+              type="checkbox"
+              checked={removeSilence}
+              onChange={(e) => setRemoveSilence(e.target.checked)}
+            />
+            빈 구간도 함께 걷어내기
+          </label>
+        </div>
+      )}
+
+      {isSilence && (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="thr">
+              이만큼 쉬면 자르기 — {thresholdSec.toFixed(1)}초
+            </label>
+            <input
+              id="thr"
+              type="range"
+              min={0.2}
+              max={3}
+              step={0.1}
+              value={thresholdSec}
+              onChange={(e) => setThresholdSec(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "var(--color-brand)" }}
+            />
+            <p className="muted mt-1 text-xs">짧게 잡을수록 많이 잘리고, 말이 툭툭 끊길 수 있습니다.</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="pad">
+              말 앞뒤 여유 — {padSec.toFixed(2)}초
+            </label>
+            <input
+              id="pad"
+              type="range"
+              min={0}
+              max={1}
+              step={0.02}
+              value={padSec}
+              onChange={(e) => setPadSec(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "var(--color-brand)" }}
+            />
+            <p className="muted mt-1 text-xs">첫 음절이 잘리면 조금 늘려 보세요.</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="silstyle">자막 스타일</label>
+            <select id="silstyle" className="select" value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)}>
+              {SUBTITLE_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 self-center text-sm">
+            <input
+              type="checkbox"
+              checked={burnSubtitles}
+              onChange={(e) => setBurnSubtitles(e.target.checked)}
+            />
+            자막도 넣기
+          </label>
+        </div>
+      )}
+
+      {tool === "policy" && (
+        <p className="muted mt-5 text-sm leading-relaxed">
+          말을 받아 적어 표현을 훑고, 길이·말의 밀도·음량 같은 형식도 함께 봅니다.
+          <b> 판정이 아니라 참고용</b>입니다 — 여기서 걸리지 않았다고 안전하다는 뜻은 아닙니다.
+        </p>
       )}
 
       {isRemake && (
@@ -367,11 +595,24 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
       )}
 
       <button type="submit" disabled={busy} className="btn-primary mt-5 w-full py-4 text-base">
-        {busy ? "시작하는 중…" : isRemake ? "재구성 시작" : "시작하기"}
+        {busy
+          ? "시작하는 중…"
+          : isRemake
+            ? "재구성 시작"
+            : isShorts
+              ? "숏폼 만들기"
+              : isSilence
+                ? "빈 구간 걷어내기"
+                : isComment
+                  ? "댓글 이미지 만들기"
+                  : tool === "policy"
+                    ? "점검하기"
+                    : "시작하기"}
       </button>
 
       <p className="muted mt-3 text-center text-xs">
-        전부 무료입니다. 본인이 권리를 가진 영상에만 사용하세요.
+        전부 무료입니다.
+        {needsSource ? " 본인이 권리를 가진 영상에만 사용하세요." : " 실제 사람의 댓글을 그대로 옮기지 마세요."}
       </p>
     </form>
   );
