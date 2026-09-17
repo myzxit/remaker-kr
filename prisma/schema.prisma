@@ -28,6 +28,7 @@ model User {
   sessions Session[]
   projects Project[]
   assets   Asset[]
+  voices   VoiceProfile[]
 }
 
 model Account {
@@ -134,6 +135,31 @@ model Asset {
   filePath  String
   sizeBytes Int    @default(0)
   meta      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// 파일에서 떠낸 목소리. 재구성·더빙에서 기본 목소리 대신 고를 수 있다.
+model VoiceProfile {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  /// 복제 엔진이 참고하는 음성 샘플 (16k~24k 모노 wav)
+  samplePath String
+  /// 샘플 길이(초)
+  sampleSec Float @default(0)
+  /// 샘플을 떠낸 원본 파일 이름
+  sourceName String?
+  /// 합성에 쓸 엔진. 현재 xtts 만 지원한다.
+  engine String @default("xtts")
+  language String @default("ko")
+
+  /// 본인 목소리이거나 사용 허락을 받았다는 확인. 없으면 합성하지 않는다.
+  consent Boolean @default(false)
 
   createdAt DateTime @default(now())
 

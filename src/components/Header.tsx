@@ -72,6 +72,9 @@ export default function Header() {
           <ThemeToggle />
           {status === "loading" ? null : session?.user ? (
             <>
+              <Link href="/voices" className="btn-ghost hidden px-4 py-2 sm:inline-flex">
+                내 목소리
+              </Link>
               <Link href="/dashboard" className="btn-ghost px-4 py-2">
                 작업실
               </Link>

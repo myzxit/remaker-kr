@@ -10,7 +10,7 @@ import { FFMPEG, FFPROBE, ensureBinary, extractAudio, extractThumbnail, probeDur
 import { downloadYoutube, fetchYoutubeTitle } from "./download";
 import { transcribe, type Transcript } from "./transcribe";
 import { buildScript, assignClips } from "./script";
-import { synthesize } from "./tts";
+import { synthesize, synthesizeCloned } from "./tts";
 import { buildCaptions, captionMaxChars } from "./subtitles";
 import { buildAudioTrack, makeWhoosh, renderRemake, getAspect } from "./remake";
 
@@ -54,6 +54,52 @@ async function addOutput(
       meta: data.meta ? JSON.stringify(data.meta) : null,
       status: "done",
     },
+  });
+}
+
+/**
+ * 목소리를 골라 대본을 읽는다.
+ *
+ * "custom:<id>" 는 파일에서 떠낸 목소리다. 그 경우 복제 엔진으로 넘기고,
+ * 아니면 기본 목소리(edge-tts)를 쓴다. 어느 쪽이든 결과 모양이 같아서
+ * 뒤따르는 자막·화면 배정은 신경 쓸 게 없다.
+ */
+async function synthesizeVoice(opts: {
+  sentences: string[];
+  voice: string;
+  rate: number;
+  language: string;
+  userId: string;
+  workDir: string;
+  onStage?: (stage: string) => void;
+}) {
+  if (!opts.voice.startsWith("custom:")) {
+    return synthesize({
+      sentences: opts.sentences,
+      voice: opts.voice,
+      rate: opts.rate,
+      workDir: opts.workDir,
+    });
+  }
+
+  const profileId = opts.voice.slice("custom:".length);
+  const profile = await prisma.voiceProfile.findFirst({
+    where: { id: profileId, userId: opts.userId },
+  });
+  if (!profile) throw new Error("고른 목소리를 찾을 수 없습니다.");
+  if (!profile.consent) {
+    throw new Error("이 목소리는 사용 확인이 되어 있지 않습니다. 목소리 보관함에서 다시 등록해 주세요.");
+  }
+
+  const samplePath = toAbsolute(profile.samplePath);
+  if (!fs.existsSync(samplePath)) throw new Error("참고 음성 파일이 없습니다.");
+
+  return synthesizeCloned({
+    sentences: opts.sentences,
+    voice: { samplePath, language: profile.language || opts.language, engine: profile.engine },
+    workDir: opts.workDir,
+    onProgress: (done, total) =>
+      opts.onStage?.(`복제한 목소리로 읽는 중 ${done}/${total}문장`),
   });
 }
 
@@ -126,21 +172,29 @@ export async function runRemake(project: Project): Promise<void> {
   // 3. 새 대본
   await setStatus(project.id, { status: "scripting", progress: 48, stage: "새 대본을 쓰는 중" });
 
+  // 복제 목소리는 한두 어절짜리 줄에서 엉뚱한 소리를 낸다. 미리 합쳐 둔다.
+  const isCloned = opts.voice.startsWith("custom:");
   const script = buildScript(transcript.segments, {
     targetSec: opts.targetSec,
     mode: opts.scriptMode,
     rate: opts.rate,
+    minChars: isCloned ? 16 : 0,
   });
   await setStatus(project.id, { scriptJson: JSON.stringify(script) });
 
   // 4. 새 목소리
   await setStatus(project.id, { status: "voicing", progress: 55, stage: "새 목소리로 읽는 중" });
 
-  const narration = await synthesize({
+  const narration = await synthesizeVoice({
     sentences: script.lines.map((l) => l.text),
     voice: opts.voice,
     rate: opts.rate,
+    language: opts.language,
+    userId: project.userId,
     workDir,
+    onStage: (stage) => {
+      void setStatus(project.id, { stage }).catch(() => {});
+    },
   });
 
   // 5. 화면 배정 — 나레이션 길이에 맞춰 원본에서 그림을 떼어 온다

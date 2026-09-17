@@ -124,6 +124,8 @@ const DOCS: Record<string, Doc> = {
           "faster-whisper (MIT) · CTranslate2 (MIT) — 음성 인식",
           "OpenAI Whisper 모델 가중치 (MIT)",
           "edge-tts (GPL-3.0) — 음성 합성 클라이언트",
+          "coqui-tts (MPL-2.0) — 목소리 복제 엔진 (선택 설치)",
+          "XTTS-v2 모델 가중치 (Coqui Public Model License — 비상업)",
           "Pretendard (SIL Open Font License 1.1) — 본문 글꼴",
         ],
       },
@@ -133,6 +135,7 @@ const DOCS: Record<string, Doc> = {
           "FFmpeg 는 빌드에 포함한 코덱 구성에 따라 적용 라이선스가 달라집니다. 상업적으로 배포한다면 사용 중인 빌드 구성을 확인하세요.",
           "edge-tts 는 GPL-3.0 입니다. 별도 프로세스로 호출해 쓰고 있으며, 배포 형태에 따라 의무가 달라질 수 있습니다.",
           "음성 합성은 Microsoft Edge 의 읽어주기 서비스를 이용합니다. 해당 서비스의 이용 조건을 확인하고 쓰세요.",
+          "‘내 목소리’(목소리 복제)에 쓰는 XTTS-v2 모델 가중치는 Coqui Public Model License 로 비상업 용도입니다. 상업적으로 운영한다면 MIT 계열 엔진으로 교체해야 합니다. 이 기능은 기본 설치에 포함되어 있지 않습니다.",
         ],
       },
       {

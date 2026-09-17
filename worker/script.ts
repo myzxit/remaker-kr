@@ -41,9 +41,46 @@ function finish(text: string): string {
   return /[.!?…]$/.test(text) ? text : `${text}.`;
 }
 
+/**
+ * 너무 짧은 줄은 앞줄에 붙인다.
+ *
+ * 복제 목소리(XTTS)는 한두 어절짜리 문장에서 엉뚱한 소리를 지어내는 일이 잦다.
+ * 확인해 보면 27자 이상 문장은 정확한데 6자짜리는 깨진다. 그래서 합성 전에
+ * 짧은 줄을 합쳐 최소 길이를 확보한다.
+ */
+function mergeShortLines(lines: ScriptLine[], minChars: number): ScriptLine[] {
+  if (minChars <= 0) return lines;
+
+  const merged: ScriptLine[] = [];
+  for (const line of lines) {
+    const last = merged[merged.length - 1];
+    const bare = line.text.replace(/[.!?…\s]/g, "").length;
+
+    if (last && bare < minChars) {
+      last.text = `${last.text.replace(/[.!?…]+$/, "")} ${line.text}`.trim();
+      last.srcEnd = line.srcEnd;
+      last.score = Math.max(last.score, line.score);
+    } else {
+      merged.push({ ...line });
+    }
+  }
+
+  // 첫 줄이 짧으면 앞에 붙일 데가 없다. 다음 줄과 합친다.
+  if (merged.length > 1) {
+    const firstBare = merged[0].text.replace(/[.!?…\s]/g, "").length;
+    if (firstBare < minChars) {
+      merged[1].text = `${merged[0].text.replace(/[.!?…]+$/, "")} ${merged[1].text}`.trim();
+      merged[1].srcStart = merged[0].srcStart;
+      merged.shift();
+    }
+  }
+
+  return merged.map((line, i) => ({ ...line, index: i }));
+}
+
 export function buildScript(
   segments: Segment[],
-  opts: { targetSec: number; mode: "condense" | "faithful"; rate: number }
+  opts: { targetSec: number; mode: "condense" | "faithful"; rate: number; minChars?: number }
 ): BuiltScript {
   const candidates = segments
     .map((seg, i) => {
@@ -82,17 +119,18 @@ export function buildScript(
 
   picked.sort((a, b) => a.srcStart - b.srcStart);
 
-  return {
-    lines: picked.map((p, i) => ({
+  const lines = mergeShortLines(
+    picked.map((p, i) => ({
       index: i,
       text: p.text,
       srcStart: p.srcStart,
       srcEnd: p.srcEnd,
       score: Number(p.score.toFixed(3)),
     })),
-    estimatedSec: Number(total.toFixed(1)),
-    mode: opts.mode,
-  };
+    opts.minChars ?? 0
+  );
+
+  return { lines, estimatedSec: Number(total.toFixed(1)), mode: opts.mode };
 }
 
 /**

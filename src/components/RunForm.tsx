@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { fetchVoices, type SavedVoice } from "@/components/VoiceManager";
 import { LANGUAGES, ASPECTS, SUBTITLE_CLEANUP, MIN_TARGET_SEC, MAX_TARGET_SEC, type ToolId } from "@/lib/tools";
 import { SUBTITLE_STYLES } from "@/lib/subtitleStyles";
 import { voicesFor } from "@/lib/voices";
@@ -40,12 +42,21 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
   const [uploadPct, setUploadPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const [myVoices, setMyVoices] = useState<SavedVoice[]>([]);
+
   const voices = useMemo(() => voicesFor(language), [language]);
   const isRemake = tool === "remake";
   const isDub = tool === "dub";
 
+  // 내가 파일에서 떠낸 목소리도 고를 수 있게 불러 온다.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetchVoices().then(setMyVoices);
+  }, [status]);
+
   function pickLanguage(next: string) {
     setLanguage(next);
+    if (voice.startsWith("custom:")) return; // 내 목소리는 언어를 바꿔도 그대로 둔다.
     const first = voicesFor(next)[0];
     if (first) setVoice(first.id);
   }
@@ -231,12 +242,36 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
               <div>
                 <label className="label" htmlFor="voice">목소리</label>
                 <select id="voice" className="select" value={voice} onChange={(e) => setVoice(e.target.value)}>
-                  {voices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label} · {v.gender === "female" ? "여성" : "남성"}
-                    </option>
-                  ))}
+                  <optgroup label="기본 목소리">
+                    {voices.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.label} · {v.gender === "female" ? "여성" : "남성"}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {myVoices.length > 0 && (
+                    <optgroup label="내 목소리 (파일에서 떠냄)">
+                      {myVoices.map((v) => (
+                        <option key={v.id} value={`custom:${v.id}`}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+                <p className="muted mt-1 text-xs">
+                  {voice.startsWith("custom:")
+                    ? "떠낸 목소리는 만드는 데 시간이 더 걸리고, 말 속도 조절은 적용되지 않습니다."
+                    : (
+                      <>
+                        파일 속 목소리를 쓰고 싶다면{" "}
+                        <Link href="/voices" className="underline underline-offset-2">
+                          내 목소리
+                        </Link>
+                        에서 추가하세요.
+                      </>
+                    )}
+                </p>
               </div>
 
               <div>

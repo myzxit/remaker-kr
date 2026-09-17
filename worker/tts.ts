@@ -10,7 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { run } from "./ffmpeg";
+import { run, FFMPEG, probeDuration } from "./ffmpeg";
 
 const EDGE_TTS = process.env.EDGE_TTS_PATH || "edge-tts";
 
@@ -110,4 +110,131 @@ export function estimateSeconds(text: string, rate = 0): number {
   const chars = text.replace(/\s/g, "").length;
   const base = chars / 5.2; // 초당 5.2자 남짓
   return base / (1 + rate / 100);
+}
+
+// ─── 파일에서 떠낸 목소리로 읽기 (음성 복제) ────────────────────────────────
+
+const PYTHON = process.env.PYTHON_PATH || "python3";
+
+/** 문장 사이 간격. 복제 엔진은 문장별로 따로 만들기 때문에 직접 넣어 준다. */
+const CLONE_GAP_SEC = 0.32;
+
+export type CloneVoice = {
+  /** 참고 음성 wav 의 절대 경로 */
+  samplePath: string;
+  language: string;
+  engine: string;
+};
+
+/**
+ * 복제한 목소리로 대본을 읽는다.
+ *
+ * edge-tts 와 달리 타임코드를 주지 않으므로, 문장마다 따로 만들고 길이를 재서
+ * 타임라인을 직접 세운다. 그 뒤 과정(자막·화면 배정)은 edge 경로와 완전히 같다.
+ */
+export async function synthesizeCloned(opts: {
+  sentences: string[];
+  voice: CloneVoice;
+  workDir: string;
+  fileBase?: string;
+  onProgress?: (done: number, total: number) => void;
+}): Promise<Narration> {
+  const base = opts.fileBase ?? "narration";
+  const partsDir = path.join(opts.workDir, `${base}-parts`);
+  fs.mkdirSync(partsDir, { recursive: true });
+
+  const sentences = opts.sentences.map((s) => s.trim()).filter(Boolean);
+  if (sentences.length === 0) throw new Error("읽을 대본이 비어 있습니다.");
+
+  const sentencesPath = path.join(opts.workDir, `${base}-sentences.json`);
+  const resultPath = path.join(opts.workDir, `${base}-parts.json`);
+  fs.writeFileSync(sentencesPath, JSON.stringify(sentences), "utf-8");
+
+  await run(
+    PYTHON,
+    [
+      path.join(process.cwd(), "worker", "clone_tts.py"),
+      "--sentences", sentencesPath,
+      "--speaker", opts.voice.samplePath,
+      "--language", opts.voice.language,
+      "--outdir", partsDir,
+      "--out", resultPath,
+    ],
+    {
+      onStderr: (chunk) => {
+        const m = /progress (\d+)\/(\d+)/.exec(chunk);
+        if (m) opts.onProgress?.(Number(m[1]), Number(m[2]));
+      },
+    }
+  );
+
+  const parts = (JSON.parse(fs.readFileSync(resultPath, "utf-8")).files ?? []) as Array<{
+    index: number;
+    path: string;
+    seconds: number;
+  }>;
+  if (parts.length === 0) throw new Error("복제한 목소리로 만들어진 음성이 없습니다.");
+
+  // 복제 엔진은 조각 앞뒤에 빈 구간을 남기고, 중간에도 길게 쉰다.
+  // 그대로 두면 타임라인이 늘어져 화면이 붕 뜬다. 다듬고 길이를 다시 잰다.
+  for (const part of parts) {
+    const trimmed = part.path.replace(/\.wav$/, "-trim.wav");
+    await run(FFMPEG, [
+      "-y", "-i", part.path,
+      "-af",
+      "silenceremove=start_periods=1:start_silence=0.15:start_threshold=-45dB:" +
+        "stop_periods=-1:stop_duration=0.35:stop_threshold=-45dB",
+      "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le",
+      trimmed,
+    ]);
+    part.path = trimmed;
+    part.seconds = await probeDuration(trimmed);
+  }
+
+  // 문장 사이에 끼울 무음을 한 번 만들어 재사용한다.
+  const silencePath = path.join(partsDir, "gap.wav");
+  await run(FFMPEG, [
+    "-y",
+    "-f", "lavfi",
+    "-i", `anullsrc=r=24000:cl=mono:d=${CLONE_GAP_SEC}`,
+    "-c:a", "pcm_s16le",
+    silencePath,
+  ]);
+
+  // concat 데모서는 형식이 같아야 한다. 복제 결과와 무음 모두 24kHz 모노 wav.
+  const listPath = path.join(partsDir, "list.txt");
+  const escape = (p: string) => p.replace(/'/g, "'\\''");
+  const lines: string[] = [];
+  parts.forEach((part, i) => {
+    if (i > 0) lines.push(`file '${escape(silencePath)}'`);
+    lines.push(`file '${escape(part.path)}'`);
+  });
+  fs.writeFileSync(listPath, lines.join("\n"), "utf-8");
+
+  const audioPath = path.join(opts.workDir, `${base}.wav`);
+  await run(FFMPEG, [
+    "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+    "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1",
+    audioPath,
+  ]);
+
+  // 타임라인 세우기 — 이어 붙인 순서 그대로 누적한다.
+  const cues: Cue[] = [];
+  let cursor = 0;
+  parts.forEach((part, i) => {
+    const text = sentences[part.index] ?? sentences[i] ?? "";
+    cues.push({
+      index: i,
+      start: Number(cursor.toFixed(3)),
+      end: Number((cursor + part.seconds).toFixed(3)),
+      text,
+    });
+    cursor += part.seconds + CLONE_GAP_SEC;
+  });
+
+  return {
+    audioPath,
+    cues,
+    durationSec: Number(Math.max(0, cursor - CLONE_GAP_SEC).toFixed(3)),
+  };
 }
