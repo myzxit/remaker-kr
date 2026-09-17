@@ -1,0 +1,10 @@
+# 음성 인식 워커 의존성
+# 설치: python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+#
+# 1.2.x 미만에서는 requests 가 의존성으로 딸려오지 않아
+# faster_whisper import 자체가 실패하는 조합이 있다.
+faster-whisper==1.2.1
+requests>=2.31
+
+# 무료 TTS (API 키 불필요)
+edge-tts>=7.0
