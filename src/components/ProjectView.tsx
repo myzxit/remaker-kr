@@ -58,6 +58,12 @@ type PolicyReport = {
 
 const ACTIVE = ["queued", "fetching", "transcribing", "scripting", "voicing", "rendering"];
 
+/** 자동 맞춤으로 만든 결과에는 "왜 이렇게 정했는지"가 함께 들어 있다. */
+function isAutoMeta(meta: Record<string, unknown>): meta is { auto: { reasons: string[] } } {
+  const auto = meta.auto as { reasons?: unknown } | undefined;
+  return Array.isArray(auto?.reasons);
+}
+
 const SEVERITY: Record<Finding["severity"], { label: string; color: string; bg: string }> = {
   high: { label: "먼저 볼 것", color: "#B42318", bg: "rgba(217,45,32,0.10)" },
   medium: { label: "확인", color: "#B54708", bg: "rgba(247,144,9,0.12)" },
@@ -265,6 +271,13 @@ export default function ProjectView({
 
                 <div className="p-4" style={{ background: "var(--surface)" }}>
                   <h3 className="truncate text-sm font-semibold">{out.title}</h3>
+                  {isAutoMeta(meta) && (
+                    <ul className="muted mt-2 space-y-1 text-xs">
+                      {meta.auto.reasons.map((reason, i) => (
+                        <li key={i}>· {reason}</li>
+                      ))}
+                    </ul>
+                  )}
                   <p className="muted mt-1 text-xs">
                     {typeof meta.durationSec === "number" && `${formatDuration(meta.durationSec)} · `}
                     {typeof meta.resolution === "string" && meta.resolution}

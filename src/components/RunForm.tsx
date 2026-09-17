@@ -36,7 +36,11 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
   const [burnSubtitles, setBurnSubtitles] = useState(true);
   const [sfx, setSfx] = useState(true);
   const [scriptMode, setScriptMode] = useState<"condense" | "faithful">("condense");
-  const [showOptions, setShowOptions] = useState(!compact);
+  // 자동 맞춤이 기본이라 재구성에서는 옵션을 접어 둔다.
+  const [showOptions, setShowOptions] = useState(!compact && tool !== "remake");
+  /** 링크/파일만 올려도 되도록, 재구성은 자동 맞춤을 기본으로 켠다. */
+  const [auto, setAuto] = useState(true);
+  const [autoLength, setAutoLength] = useState(true);
 
   // 숏폼 옵션
   const [shortsCount, setShortsCount] = useState(0);
@@ -127,6 +131,8 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
 
       const options: Record<string, unknown> = isRemake
         ? {
+            auto,
+            autoLength,
             targetSec,
             language,
             voice,
@@ -424,6 +430,41 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
       )}
 
       {isRemake && (
+        <label
+          className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl p-4"
+          style={{
+            border: auto ? "1px solid var(--color-brand)" : "1px solid var(--line)",
+            background: auto ? "color-mix(in srgb, var(--color-brand) 8%, transparent)" : "transparent",
+          }}
+        >
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={auto}
+            onChange={(e) => setAuto(e.target.checked)}
+          />
+          <span className="text-sm">
+            <b>자동으로 맞추기</b>
+            <span className="muted block mt-1 leading-relaxed">
+              올린 영상만 보고 언어·목소리·화면 비율·결과 길이를 정합니다. 원본 소리와 효과음은
+              어느 쪽이든 통째로 빠지고, 새 목소리·효과음·자막이 들어갑니다.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {isRemake && auto && (
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!autoLength}
+            onChange={(e) => setAutoLength(!e.target.checked)}
+          />
+          길이는 내가 정할게요
+        </label>
+      )}
+
+      {isRemake && (!auto || !autoLength) && (
         <div className="mt-5">
           <label className="label" htmlFor="len">
             결과 길이 — <b style={{ color: "var(--ink)" }}>{label(targetSec)}</b>
@@ -441,7 +482,7 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
           />
           <div className="muted mt-1 flex justify-between text-xs">
             <span>1분</span>
-            <span>25분</span>
+            <span>28분</span>
           </div>
         </div>
       )}
@@ -453,7 +494,7 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
             onClick={() => setShowOptions((v) => !v)}
             className="muted mt-4 text-sm underline-offset-4 hover:underline"
           >
-            {showOptions ? "옵션 접기" : "옵션 열기"}
+            {showOptions ? "옵션 접기" : isRemake && auto ? "직접 고르기" : "옵션 열기"}
           </button>
 
           {showOptions && (
@@ -598,7 +639,9 @@ export default function RunForm({ tool, compact = false }: { tool: ToolId; compa
         {busy
           ? "시작하는 중…"
           : isRemake
-            ? "재구성 시작"
+            ? auto
+              ? "올리고 자동으로 재구성"
+              : "재구성 시작"
             : isShorts
               ? "숏폼 만들기"
               : isSilence

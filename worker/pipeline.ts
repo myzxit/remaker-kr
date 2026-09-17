@@ -21,6 +21,7 @@ import {
   extractAudio,
   extractThumbnail,
   probeDuration,
+  probeSize,
   probeVolume,
 } from "./ffmpeg";
 import { downloadYoutube, fetchYoutubeTitle } from "./download";
@@ -41,6 +42,7 @@ import {
 import { renderCuts } from "./cut";
 import { renderCommentCard } from "./comment";
 import { analyzeTranscript } from "./policy";
+import { buildAutoPlan, type AutoPlan } from "./auto";
 
 const setStatus = (id: string, data: Record<string, unknown>) =>
   prisma.project.update({ where: { id }, data });
@@ -162,7 +164,7 @@ export async function runRemake(project: Project): Promise<void> {
           subtitleCleanup: "none" as const,
           scriptMode: "faithful" as const,
           sfx: false,
-          targetSec: 25 * 60,
+          targetSec: 28 * 60,
         };
       })()
     : remakeOptions.parse(raw);
@@ -176,6 +178,12 @@ export async function runRemake(project: Project): Promise<void> {
     sourcePath: toRelative(sourceAbs),
     durationSec: Math.round(sourceDuration),
   });
+
+  // 자동 맞춤 — 링크나 파일만 올렸을 때 나머지를 원본에서 정한다.
+  // 언어는 받아 적기가 알려 주므로, 계획은 받아 적기가 끝난 뒤에 세운다.
+  const isAuto = !isDub && opts.auto;
+  const sourceSize = isAuto ? await probeSize(sourceAbs) : null;
+  let autoPlan: AutoPlan | null = null;
 
   // 2. 원본 음성 인식 — 무엇을 말하는지 알아야 새 대본을 쓸 수 있다
   await setStatus(project.id, {
@@ -197,12 +205,37 @@ export async function runRemake(project: Project): Promise<void> {
 
   await setStatus(project.id, { transcriptJson: JSON.stringify(transcript) });
 
+  if (isAuto && sourceSize) {
+    autoPlan = buildAutoPlan({
+      sourceSec: sourceDuration,
+      width: sourceSize.width,
+      height: sourceSize.height,
+      detectedLanguage: transcript.language,
+      fixedTargetSec: opts.autoLength ? undefined : opts.targetSec,
+    });
+
+    opts.aspect = autoPlan.aspect;
+    opts.targetSec = autoPlan.targetSec;
+    opts.scriptMode = autoPlan.scriptMode;
+    opts.language = autoPlan.language;
+    // 자기 목소리를 골라 뒀다면 그대로 둔다.
+    if (!opts.voice.startsWith("custom:")) opts.voice = autoPlan.voice;
+    // 원본에 자막이 박혀 있어도 새 자막이 그 자리를 덮는다. 잘라내면 화면이 좁아진다.
+    opts.subtitleCleanup = "cover";
+    opts.burnSubtitles = true;
+    opts.sfx = true;
+
+    await setStatus(project.id, { stage: autoPlan.reasons[0] });
+  }
+
   // 3. 새 대본
   await setStatus(project.id, { status: "scripting", progress: 48, stage: "새 대본을 쓰는 중" });
 
   // 복제 목소리는 한두 어절짜리 줄에서 엉뚱한 소리를 낸다. 미리 합쳐 둔다.
   const isCloned = opts.voice.startsWith("custom:");
-  const script = buildScript(transcript.segments, {
+  // 받아 적기가 문장을 20초씩 묶어 주는 일이 있다. 그대로 두면 대본이 두세 줄로
+  // 끝나고 길이 조절이 거칠어진다. 먼저 문장 단위로 쪼갠다.
+  const script = buildScript(splitLongSegments(transcript.segments), {
     targetSec: opts.targetSec,
     mode: opts.scriptMode,
     rate: opts.rate,
@@ -286,6 +319,7 @@ export async function runRemake(project: Project): Promise<void> {
       language: opts.language,
       resolution: `${aspectBox.width}x${aspectBox.height}`,
       sourceDurationSec: Math.round(sourceDuration),
+      auto: autoPlan ? { reasons: autoPlan.reasons, targetSec: autoPlan.targetSec } : undefined,
     },
   });
 

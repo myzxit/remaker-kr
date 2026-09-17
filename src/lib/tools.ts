@@ -38,7 +38,7 @@ export const TOOLS: Tool[] = [
     name: "영상 재구성",
     tagline: "목소리·효과음·자막을 전부 새로 입힙니다",
     description:
-      "원본 오디오를 통째로 걷어내고, 새 내레이션과 효과음, 새 자막을 얹어 다른 영상으로 다시 만듭니다. 1분에서 25분까지 길이를 지정하면 거기에 맞춰 대본과 화면을 재구성합니다.",
+      "링크나 파일 하나만 올리면 됩니다. 원본 오디오를 통째로 걷어내고, 새 내레이션과 효과음, 새 자막을 얹어 다른 영상으로 다시 만듭니다. 언어·목소리·화면 비율·결과 길이(1~28분)는 원본을 보고 알아서 정하며, 직접 고를 수도 있습니다.",
     icon: "🔁",
     isJob: true,
     requires: [],
@@ -89,7 +89,7 @@ export const TOOLS: Tool[] = [
     name: "댓글 이미지",
     tagline: "댓글 캡처 느낌의 그래픽",
     description:
-      "닉네임과 내용을 넣으면 영상에 얹기 좋은 댓글 카드 이미지를 만듭니다. 서버에서 SVG 로 그려 PNG 로 내보냅니다.",
+      "닉네임과 내용을 넣으면 영상에 얹기 좋은 댓글 카드 이미지를 만듭니다. 서버에서 ffmpeg 로 그려 PNG 로 내보냅니다.",
     icon: "💬",
     isJob: true,
     requires: [],
@@ -145,9 +145,9 @@ export function isToolReady(tool: Tool): boolean {
 
 // ─── 도구별 설정 스키마 ────────────────────────────────────────────────────
 
-/** 재구성 결과 길이. 1분 ~ 25분. */
+/** 재구성 결과 길이. 1분 ~ 28분. */
 export const MIN_TARGET_SEC = 60;
-export const MAX_TARGET_SEC = 25 * 60;
+export const MAX_TARGET_SEC = 28 * 60;
 
 export const LANGUAGES = [
   { id: "ko", label: "한국어" },
@@ -172,6 +172,15 @@ export const SUBTITLE_CLEANUP = [
 ] as const;
 
 export const remakeOptions = z.object({
+  /**
+   * 자동 맞춤.
+   *
+   * 켜면 링크나 파일만 올려도 됩니다. 원본을 보고 언어·목소리·화면 비율·결과
+   * 길이를 정합니다. 길이만 직접 고르고 싶으면 autoLength 를 끄면 됩니다.
+   */
+  auto: z.boolean().default(false),
+  /** auto 일 때 결과 길이까지 알아서 정할지 */
+  autoLength: z.boolean().default(true),
   targetSec: z.number().int().min(MIN_TARGET_SEC).max(MAX_TARGET_SEC).default(180),
   language: z.enum(["ko", "en", "ja", "zh", "es"]).default("ko"),
   voice: z.string().default("ko-KR-SunHiNeural"),

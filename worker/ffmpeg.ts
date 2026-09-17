@@ -66,6 +66,22 @@ export async function probeDuration(file: string): Promise<number> {
   return value;
 }
 
+/** 영상 크기. 자동 맞춤에서 원본이 가로인지 세로인지 볼 때 쓴다. */
+export async function probeSize(file: string): Promise<{ width: number; height: number }> {
+  const { stdout } = await run(FFPROBE, [
+    "-v", "error",
+    "-select_streams", "v:0",
+    "-show_entries", "stream=width,height",
+    "-of", "csv=p=0",
+    file,
+  ]);
+  const [w, h] = stdout.trim().split(",").map((v) => Number.parseInt(v, 10));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    throw new Error("영상 크기를 읽을 수 없습니다.");
+  }
+  return { width: w, height: h };
+}
+
 /**
  * 음량 측정 (평균 / 최대, dB).
  *

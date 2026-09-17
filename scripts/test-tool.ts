@@ -23,6 +23,7 @@ import { NEEDS_SOURCE, OPTION_SCHEMAS } from "../src/lib/tools";
 import { probeDuration } from "../worker/ffmpeg";
 
 const DEFAULTS: Record<string, Record<string, unknown>> = {
+  remake: { auto: true, autoLength: true },
   shorts: { count: 2, minSec: 15, maxSec: 40, aspect: "9:16", subtitleStyle: "pop", removeSilence: true },
   silence: { thresholdSec: 0.5, padSec: 0.12, burnSubtitles: true, subtitleStyle: "clean" },
   policy: {},
