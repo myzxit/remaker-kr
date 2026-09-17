@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/*
+  밝은 화면이 기본. 오른쪽 위 토글로 어두운 화면으로 바꿀 수 있고,
+  아무것도 고르지 않았으면 기기 설정을 따라간다.
+*/
+@theme {
+  --color-ink: #0f172a;
+  --color-ink-soft: #475569;
+  --color-line: #e2e8f0;
+  --color-surface: #ffffff;
+  --color-canvas: #f8fafc;
+  --color-brand: #4f46e5;
+  --color-brand-soft: #6366f1;
+  --color-accent: #0d9488;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+
+:root {
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --line: #e2e8f0;
+  --surface: #ffffff;
+  --canvas: #f8fafc;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 8px 24px rgb(15 23 42 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e8ecf6;
+    --ink-soft: #9aa6bd;
+    --line: #232a3a;
+    --surface: #141a26;
+    --canvas: #0b0f17;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink: #e8ecf6;
+  --ink-soft: #9aa6bd;
+  --line: #232a3a;
+  --surface: #141a26;
+  --canvas: #0b0f17;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+}
+
+.section {
+  @apply mx-auto w-full max-w-6xl px-5 py-16 sm:px-8 sm:py-20;
+}
+
+.eyebrow {
+  @apply text-sm font-semibold tracking-wide;
+  color: var(--color-brand);
+}
+
+.h1 {
+  @apply mt-3 text-3xl font-bold leading-[1.25] sm:text-5xl;
+}
+
+.h2 {
+  @apply mt-3 text-2xl font-bold leading-tight sm:text-3xl;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  @apply rounded-2xl p-6;
+}
+
+.btn,
+.btn-primary,
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition
+    disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-primary {
+  background: var(--color-brand);
+  @apply text-white;
+}
+.btn-primary:hover {
+  background: var(--color-brand-soft);
+}
+
+.btn-ghost {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.btn-ghost:hover {
+  border-color: var(--color-brand);
+}
+
+.input,
+.select,
+.textarea {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  @apply w-full rounded-xl px-4 py-3 text-sm outline-none;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--color-brand);
+}
+
+.label {
+  color: var(--ink-soft);
+  @apply mb-2 block text-sm font-medium;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-medium;
+  color: var(--ink-soft);
+}
+
+.chip-brand {
+  border-color: color-mix(in srgb, var(--color-brand) 35%, transparent);
+  background: color-mix(in srgb, var(--color-brand) 10%, transparent);
+  color: var(--color-brand);
+}
+
+.chip-ok {
+  border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+}
+
+.chip-bad {
+  @apply border-red-300 bg-red-50 text-red-600;
+}
+
+.divider {
+  border-top: 1px solid var(--line);
+}

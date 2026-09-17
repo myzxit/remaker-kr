@@ -1,0 +1,185 @@
+// 리메이커 데이터 모델
+//
+// 크레딧·결제 개념이 없다. 모든 도구가 무료다.
+// 대신 한 사람이 서버를 독점하지 않도록 동시 작업 수만 제한한다(WORKER_CONCURRENCY).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+
+  /// "user" | "admin"
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+
+  accounts Account[]
+  sessions Session[]
+  projects Project[]
+  assets   Asset[]
+  voices   VoiceProfile[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// 작업 1건. 도구 종류는 kind 로 구분하고, 도구별 설정은 optionsJson 에 담는다.
+model Project {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// remake | dub | shorts | silence | extract
+  kind  String
+  title String
+
+  sourceType String // "link" | "upload"
+  sourceUrl  String?
+  sourcePath String?
+
+  durationSec Int     @default(0)
+  status      String  @default("queued") // queued|fetching|transcribing|scripting|voicing|rendering|done|failed
+  progress    Int     @default(0)
+  stage       String?
+  error       String?
+
+  /// 도구별 설정(JSON). 스키마는 src/lib/tools.ts 의 zod 로 검증한다.
+  optionsJson String @default("{}")
+
+  /// 원본 음성 인식 결과
+  transcriptJson String?
+  /// 재구성된 대본(문장 · 화면 타이밍 · TTS 파일)
+  scriptJson String?
+
+  outputs Output[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([userId, createdAt])
+}
+
+/// 결과물. 도구에 따라 영상 1개일 수도, 쇼츠 여러 개일 수도 있다.
+model Output {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  index     Int
+  title     String
+  kind      String  @default("video") // video | image | audio | subtitle
+  filePath  String?
+  thumbPath String?
+  meta      String? // JSON: 길이·해상도·언어 등
+  status    String  @default("pending")
+  error     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, index])
+}
+
+/// 에셋 보관함(클라우드). 업로드한 원본과 만들어진 결과물을 한곳에서 관리한다.
+model Asset {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind      String // video | image | audio
+  name      String
+  filePath  String
+  sizeBytes Int    @default(0)
+  meta      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// 파일에서 떠낸 목소리. 재구성·더빙에서 기본 목소리 대신 고를 수 있다.
+model VoiceProfile {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  /// 복제 엔진이 참고하는 음성 샘플 (16k~24k 모노 wav)
+  samplePath String
+  /// 샘플 길이(초)
+  sampleSec Float @default(0)
+  /// 샘플을 떠낸 원본 파일 이름
+  sourceName String?
+  /// 합성에 쓸 엔진. 현재 xtts 만 지원한다.
+  engine String @default("xtts")
+  language String @default("ko")
+
+  /// 본인 목소리이거나 사용 허락을 받았다는 확인. 없으면 합성하지 않는다.
+  consent Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Job {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  type     String
+  payload  String?
+  status   String  @default("queued")
+  attempts Int     @default(0)
+  error    String?
+
+  lockedAt   DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([status, createdAt])
+}
